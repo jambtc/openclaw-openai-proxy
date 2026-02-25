@@ -66,6 +66,13 @@ async def list_models() -> Dict[str, Any]:
     }
 
 
+@app.get("/models")
+async def list_models_alias() -> Dict[str, Any]:
+    """Compatibility alias without /v1 prefix."""
+    return await list_models()
+
+
+
 async def _forward_chat_completion(payload: Dict[str, Any]):
     model_id = payload.get("model")
     if not model_id:
@@ -79,11 +86,8 @@ async def _forward_chat_completion(payload: Dict[str, Any]):
     payload["model"] = f"openclaw:{agent.agent_id}"
 
     stream = bool(payload.get("stream", False))
-    result = await client.chat_completions(payload, stream)
-
-    if stream:
-        assert isinstance(result, AsyncIterator)
-        return StreamingResponse(result, media_type="text/event-stream")
+    payload["stream"] = False
+    result = await client.chat_completions(payload, False)
 
     assert isinstance(result, httpx.Response)
     data = result.json()
@@ -94,6 +98,13 @@ async def _forward_chat_completion(payload: Dict[str, Any]):
 async def chat_completions(request: Request):
     payload = await request.json()
     return await _forward_chat_completion(payload)
+
+
+@app.post("/chat/completions")
+async def chat_completions_alias(request: Request):
+    """Compatibility alias without /v1 prefix."""
+    return await chat_completions(request)
+
 
 
 @app.post("/{pipeline_id}/filter/inlet")

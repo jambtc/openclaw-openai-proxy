@@ -17,7 +17,7 @@ class GatewayClient:
 
     @property
     def base_url(self) -> str:
-        return str(self._config.gateway.base_url)
+        return str(self._config.gateway.base_url).rstrip("/")
 
     @property
     def token(self) -> str:

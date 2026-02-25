@@ -23,3 +23,8 @@ dev = [
 
 [project.scripts]
 openclaw-openai-proxy = "openclaw_openai_proxy.main:run"
+
+[tool.setuptools.packages.find]
+include = [
+    "openclaw_openai_proxy*"
+]
