@@ -12,3 +12,4 @@ config.dev.yaml
 build/
 dist/
 *.egg-info/
+pipelines-uploaded/

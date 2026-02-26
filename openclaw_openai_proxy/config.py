@@ -47,6 +47,10 @@ class PipelineConfig(BaseModel):
     priority: int = 500
     enforce_user: bool = True
     enforce_prefix: Optional[str] = None
+    valves_config: Optional[str] = Field(
+        default=None,
+        description="Path to JSON file that defines valves/spec metadata.",
+    )
 
 
 class GatewayConfig(BaseModel):

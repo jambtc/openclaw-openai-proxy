@@ -1,0 +1,30 @@
+{
+  "values": {
+    "sessionKeyFormat": "sha256(user_id:chat_id)[:64]",
+    "mutable": false
+  },
+  "schema": {
+    "title": "OpenClawSessionBridgeValves",
+    "type": "object",
+    "properties": {
+      "sessionKeyFormat": {
+        "title": "Formato session key",
+        "type": "string",
+        "default": "sha256(user_id:chat_id)[:64]",
+        "readOnly": true,
+        "description": "Preview della chiave deterministica usata per stabilizzare la sessione OpenClaw"
+      },
+      "mutable": {
+        "title": "Config modificabile",
+        "type": "boolean",
+        "default": false,
+        "readOnly": true,
+        "description": "Indicatore solo informativo (le valvole attuali non sono modificabili)"
+      }
+    },
+    "required": [
+      "sessionKeyFormat",
+      "mutable"
+    ]
+  }
+}

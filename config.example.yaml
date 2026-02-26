@@ -17,3 +17,4 @@ pipeline:
   description: "Propaga chat_id -> user per sessioni stabili"
   pipelines: ["*"]
   priority: 500
+  valves_config: config/pipeline-valves.json
