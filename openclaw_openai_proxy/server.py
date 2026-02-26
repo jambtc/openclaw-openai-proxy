@@ -143,6 +143,40 @@ async def pipeline_outlet(pipeline_id: str, request: Request):
 async def pipelines() -> Dict[str, Any]:
     return {"data": [_serialize_pipeline()]}
 
+@app.get("/{pipeline_id}/valves")
+async def pipeline_valves(pipeline_id: str):
+    if pipeline_id != config.pipeline.id:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    valves = [
+        {
+            "id": "session-key-preview",
+            "name": "Anteprima session key",
+            "description": "Mostra la logica sha256(user_id + chat_id)",
+            "value": "sha256(user_id:chat_id)[:64]",
+            "mutable": False,
+        }
+    ]
+    return {"data": valves}
+
+
+@app.get("/{pipeline_id}/valves/spec")
+async def pipeline_valves_spec(pipeline_id: str):
+    if pipeline_id != config.pipeline.id:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    spec = {
+        "fields": [
+            {
+                "id": "sessionKeyFormat",
+                "label": "Formato session key",
+                "type": "text",
+                "default": "sha256(user_id:chat_id)[:64]",
+                "editable": False,
+            }
+        ]
+    }
+    return {"data": spec}
 
 @app.post("/pipelines/add")
 async def pipelines_add():
