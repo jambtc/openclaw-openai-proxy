@@ -1,0 +1,22 @@
+services:
+  openclaw-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openclaw-openai-proxy
+    restart: unless-stopped
+    ports:
+      - "4010:4010"
+    env_file:
+      - .env
+    environment:
+      - OPENCLAW_PROXY_CONFIG=config.yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - tradarb_network
+
+networks:
+  tradarb_network:
+    external: true
+    name: tradarb_default
