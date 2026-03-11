@@ -46,6 +46,8 @@ Data: 2026-03-11
 - Endpoint principali disponibili:
   - `GET /v1/models` (alias `/models`)
   - `POST /v1/chat/completions` (alias `/chat/completions`)
+  - `POST /v1/completions` (alias `/completions`)
+  - `POST /v1/responses` (alias `/responses`)
   - `POST /v1/uploads/bridge` (alias `/uploads/bridge`)
   - endpoint pipeline/filter/valves anche con alias `/v1/...`.
 - Mapping modelli:
@@ -57,7 +59,11 @@ Data: 2026-03-11
   - split config `gateway` (opc) e `backend` (be)
   - token gateway via env expansion `${OPENCLAW_GATEWAY_TOKEN}`.
 - Completions:
-  - forwarding attuale non-streaming (`stream=false`) verso `be` (`/v1/chat/completions`).
+  - forwarding attuale non-streaming (`stream=false`) verso `be` su endpoint OpenAI compatibili:
+    - `/v1/chat/completions`
+    - `/v1/completions`
+    - `/v1/responses`
+  - fallback compatibilita: se `be /v1/responses` ritorna `404 Not Found`, il proxy traduce la richiesta su `be /v1/chat/completions` e ritorna shape `response` minima.
 
 ## Porte esposte (tutti i servizi del contesto)
 

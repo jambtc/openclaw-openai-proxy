@@ -117,3 +117,9 @@ Linee guida:
 - Aggiornato il proxy: `POST /v1/chat/completions` (e alias `/chat/completions`) ora inoltra a `be` (`/v1/chat/completions`) invece di chiamare `opc` direttamente.
 - Mantenuto mapping modello configurato nel proxy (`model -> openclaw:<agent_id>`) prima dell'inoltro.
 - Inoltro header auth/debug verso BE (`Authorization`, `X-Debug-User`) anche per le completions.
+- Esteso lo stesso routing su endpoint OpenAI aggiuntivi:
+  - `POST /v1/completions` (alias `/completions`) -> `be /v1/completions`
+  - `POST /v1/responses` (alias `/responses`) -> `be /v1/responses`
+- Aggiunta compatibilita runtime su `/v1/responses`:
+  - se `be` risponde `404 Not Found` (upstream non disponibile), il proxy fa fallback a `be /v1/chat/completions`
+  - il proxy traduce la risposta chat in shape `response` minimale per evitare blocchi client.

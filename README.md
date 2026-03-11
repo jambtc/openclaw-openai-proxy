@@ -7,6 +7,8 @@ BFF backend (`be`) while preserving chat/session affinity. It exposes:
   pipeline filter that injects the Open WebUI `chat_id` into the OpenAI `user`
   field.
 - `/v1/chat/completions` – forwards requests to `be` (`/v1/chat/completions`).
+- `/v1/completions` – forwards requests to `be` (`/v1/completions`).
+- `/v1/responses` – forwards requests to `be` (`/v1/responses`).
 - `/v1/uploads/bridge` – forwards multipart upload requests to `be`
   (`/api/v1/uploads`) and returns the BE payload plus a bridge correlation id.
 - `/<pipeline-id>/filter/(inlet|outlet)` – remote pipeline hooks consumed by Open
@@ -114,7 +116,8 @@ WantedBy=multi-user.target
 ## Limitations
 
 - `/pipelines/upload` and `/pipelines/add` return HTTP 405 (not yet supported).
-- `chat/completions` and `uploads/bridge` are proxied; embeddings/images are out of scope.
+- `chat/completions`, `completions`, `responses`, and `uploads/bridge` are proxied; embeddings/images are out of scope.
+- If upstream `be` returns `404 Not Found` on `/v1/responses`, the proxy applies a compatibility fallback to `be /v1/chat/completions` and translates the output to a `response`-like shape.
 - The proxy trusts inbound requests; place it behind a reverse proxy or private
   network segment if you need authentication.
 
