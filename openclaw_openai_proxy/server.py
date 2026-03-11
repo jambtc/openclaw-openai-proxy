@@ -4,12 +4,14 @@ from pathlib import Path
 import hashlib
 import json
 import logging
+import uuid
 from typing import Any, Dict
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from .backend import BackendClient
 from .config import AgentConfig
 from .gateway import GatewayClient
 from .settings import build_runtime_settings
@@ -19,6 +21,7 @@ log = logging.getLogger(__name__)
 settings = build_runtime_settings()
 config = settings.app_config
 client = GatewayClient(config)
+backend_client = BackendClient(config)
 
 app = FastAPI(title="OpenClaw OpenAI Proxy", version="0.1.0")
 
@@ -120,6 +123,7 @@ def _session_key(user_id: str, chat_id: str) -> str:
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     await client.close()
+    await backend_client.close()
 
 
 @app.get("/healthz")
@@ -183,6 +187,69 @@ async def chat_completions(request: Request):
 async def chat_completions_alias(request: Request):
     """Compatibility alias without /v1 prefix."""
     return await chat_completions(request)
+
+
+def _bridge_headers_from_request(request: Request) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for name in ("authorization", "x-debug-user"):
+        value = request.headers.get(name)
+        if value:
+            headers[name] = value
+    return headers
+
+
+@app.post("/v1/uploads/bridge")
+async def uploads_bridge_v1(request: Request):
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=400, detail="Upload bridge requires multipart/form-data"
+        )
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty multipart body")
+
+    bridge_upload_id = uuid.uuid4().hex
+    headers = _bridge_headers_from_request(request)
+
+    try:
+        be_response = await backend_client.upload_multipart_raw(
+            body=body, content_type=content_type, headers=headers
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Failed forwarding upload to BE",
+                "bridge_upload_id": bridge_upload_id,
+                "error": str(exc),
+            },
+        ) from exc
+
+    try:
+        be_payload = be_response.json()
+    except Exception:
+        be_payload = {"raw_response": be_response.text}
+
+    if isinstance(be_payload, dict):
+        response_payload: Dict[str, Any] = {
+            "bridge_upload_id": bridge_upload_id,
+            **be_payload,
+        }
+    else:
+        response_payload = {
+            "bridge_upload_id": bridge_upload_id,
+            "be_payload": be_payload,
+        }
+
+    return JSONResponse(status_code=be_response.status_code, content=response_payload)
+
+
+@app.post("/uploads/bridge")
+async def uploads_bridge(request: Request):
+    """Compatibility alias without /v1 prefix."""
+    return await uploads_bridge_v1(request)
 
 
 # -------------------------

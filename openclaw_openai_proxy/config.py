@@ -60,8 +60,18 @@ class GatewayConfig(BaseModel):
     token: str = Field(..., description="Gateway bearer token")
 
 
+class BackendConfig(BaseModel):
+    base_url: AnyHttpUrl = Field(
+        default="http://127.0.0.1:8000", description="OpenClaw BFF URL"
+    )
+    timeout_seconds: float = Field(
+        default=120, gt=0, le=600, description="Timeout for proxy->BFF calls"
+    )
+
+
 class AppConfig(BaseModel):
     gateway: GatewayConfig
+    backend: BackendConfig = Field(default_factory=BackendConfig)
     agents: List[AgentConfig]
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
 
