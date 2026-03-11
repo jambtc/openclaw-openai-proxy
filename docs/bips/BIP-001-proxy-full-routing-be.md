@@ -94,3 +94,17 @@ Linee guida:
 
 - Aggiunto `BIP-002` per intercetto upload Box su `/api/v1/files`.
 - Aggiunto `BIP-003` per endpoint upload bridge nel proxy e inject contesto su `opc` via `be`.
+
+### 2026-03-11 - Step tecnico completato (proxy upload bridge)
+
+- Completato primo step implementativo su `proxy`: endpoint multipart bridge verso `be`.
+- Endpoint disponibili: `POST /v1/uploads/bridge` e alias `POST /uploads/bridge`.
+- Restituzione risposta BE con `bridge_upload_id` per tracciamento.
+
+### 2026-03-11 - Step 1 chiuso (verifica reale)
+
+- Verificato E2E upload su BE remoto tramite proxy:
+  - response con `bridge_upload_id` + `upload_id`
+  - `status=uploaded`
+- Verificato download file dal BE con endpoint `/api/v1/uploads/{upload_id}/download`.
+- Step successivo aperto: inject automatico contesto documento su conversazione (`BIP-003`, fase 2).

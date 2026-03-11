@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openclaw-openai-proxy
+    container_name: opc-proxy
     restart: unless-stopped
     ports:
       - "4010:4010"

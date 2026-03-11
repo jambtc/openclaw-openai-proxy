@@ -2,6 +2,10 @@ gateway:
   base_url: http://127.0.0.1:18789
   token: "REPLACE_WITH_OPENCLAW_GATEWAY_TOKEN"
 
+backend:
+  base_url: http://127.0.0.1:8000
+  timeout_seconds: 120
+
 agents:
   - id: "openclaw:contabo"
     name: "Contabo (OpenClaw)"

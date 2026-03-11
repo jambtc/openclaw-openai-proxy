@@ -17,7 +17,7 @@ Legenda stato: `📋 Proposta` - `🔄 In Esecuzione` - `✅ Completata` - `🚫
 | --- | ------ | --------- | -------- | ----- |
 | [BIP-001](BIP-001-proxy-full-routing-be.md) | Proxy full-routing verso BE (completions + documenti) | Architettura / Integrazione | Alta | 🔄 In Esecuzione |
 | [BIP-002](BIP-002-box-upload-intercept.md) | Box upload intercept (`/api/v1/files`) verso proxy | Integrazione Box / Proxy | Alta | 📋 Proposta |
-| [BIP-003](BIP-003-proxy-upload-bridge-be-opc.md) | Proxy upload API + bridge BE + context inject OPC | Integrazione Proxy / BE / OPC | Alta | 📋 Proposta |
+| [BIP-003](BIP-003-proxy-upload-bridge-be-opc.md) | Proxy upload API + bridge BE + context inject OPC | Integrazione Proxy / BE / OPC | Alta | 🔄 In Esecuzione |
 
 ---
 

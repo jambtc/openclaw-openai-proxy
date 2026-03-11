@@ -1,6 +1,6 @@
 # BIP-003 - Proxy upload API + bridge BE + context inject OPC
 
-> Stato attuale: `📋 Proposta` - 2026-03-11
+> Stato attuale: `🔄 In Esecuzione` - avvio 2026-03-11
 > Owner: `proxy + be` team
 
 ## Contesto
@@ -91,3 +91,37 @@ Campi response proxy -> Box:
 - Confermato endpoint inject target: `POST /api/v1/conversations/{conversation_id}/inject`.
 - Aggiunto riferimento operativo: `docs/bips/references/BE-openapi-uploads.md`.
 - Estratto schema ridotto: `docs/bips/references/BE-openapi-uploads-schemas.json`.
+
+### 2026-03-11 - Step 1 implementato (proxy upload bridge)
+
+- Implementato nuovo client backend nel proxy: `openclaw_openai_proxy/backend.py`.
+- Estesa config proxy con sezione `backend`:
+  - `base_url`
+  - `timeout_seconds`
+- Aggiornati file config:
+  - `config.example.yaml`
+  - `config.yaml`
+- Implementato endpoint bridge upload:
+  - `POST /v1/uploads/bridge`
+  - alias `POST /uploads/bridge`
+- Comportamento endpoint:
+  - accetta `multipart/form-data`
+  - inoltra multipart a `be` su `POST /api/v1/uploads`
+  - propaga header `Authorization` e `X-Debug-User` se presenti
+  - ritorna payload BE con `bridge_upload_id` aggiunto
+- Verifica locale:
+  - controllo sintassi Python: `ok`
+  - test E2E non ancora eseguito (richiede `be` attivo e chiamata reale multipart verso proxy).
+
+### 2026-03-11 - Step 1 validato E2E su BE remoto
+
+- Configurato uso BE remoto: `https://be-boxedai-contabo.theia-innovation.com`.
+- Eseguito test reale su `POST /v1/uploads/bridge` con file di prova multipart.
+- Risultato positivo:
+  - `bridge_upload_id` restituito dal proxy
+  - `upload_id` restituito dal BE
+  - `status=uploaded`
+- Verificato download file da endpoint BE:
+  - `GET /api/v1/uploads/{upload_id}/download` raggiungibile e contenuto corretto.
+- Correzione tecnica applicata durante test:
+  - fix forwarding multipart nel proxy con passthrough raw body + content-type originale (boundary invariato), evitando errori di encoding multipart.
