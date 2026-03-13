@@ -699,32 +699,21 @@ def _edge_provider_chat_id(request: Request, payload: dict[str, Any]) -> str | N
 
 
 def _edge_build_public_document_url(be_payload: dict[str, Any], links_payload: dict[str, Any]) -> str | None:
-    def _is_publicly_reachable_url(candidate: str) -> bool:
-        try:
-            parsed = urlparse(candidate)
-        except Exception:
-            return False
-
-        hostname = (parsed.hostname or "").strip().lower()
-        if not hostname:
-            return False
-        if hostname in {"localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}:
-            return False
-
-        try:
-            ip = ipaddress.ip_address(hostname)
-        except ValueError:
-            return True
-
-        return not (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified)
+    # Test mode for OPC: force presigned_get_url first.
+    # This is the most realistic candidate when BE/MinIO is configured correctly,
+    # and avoids ambiguity with static public_url/download_url behavior.
+    for candidate in (
+        links_payload.get("presigned_get_url"),
+        be_payload.get("presigned_get_url"),
+    ):
+        if isinstance(candidate, str) and candidate:
+            return candidate
 
     for candidate in (
         links_payload.get("public_url"),
-        links_payload.get("presigned_get_url"),
         be_payload.get("public_url"),
-        be_payload.get("presigned_get_url"),
     ):
-        if isinstance(candidate, str) and candidate and _is_publicly_reachable_url(candidate):
+        if isinstance(candidate, str) and candidate:
             return candidate
 
     download_url = links_payload.get("download_url") or be_payload.get("download_url")
@@ -796,6 +785,14 @@ async def _edge_resolve_chat_documents(
             )
             continue
 
+        print(
+            "EDGE upload.links selected "
+            f"chat_id={chat_id} "
+            f"upload_id={upload_id} "
+            f"url={public_url}",
+            flush=True,
+        )
+
         documents.append(
             {
                 "file_id": file_id,
@@ -837,7 +834,12 @@ def _edge_append_document_context(
     if not messages or not documents:
         return
 
-    lines = ["Attached documents:"]
+    lines = [
+        "Attached documents:",
+        "Use these document URLs as the primary source for this request.",
+        "If you need the file content, perform an internal curl/HTTP GET from your runtime to the document URL below and inspect the returned content.",
+        "Do not ask the user to upload the file again if a document URL is already present.",
+    ]
     for doc in documents:
         lines.append(f"- {doc['filename']}: {doc['public_url']}")
     injection = "\n".join(lines)
