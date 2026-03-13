@@ -1,6 +1,6 @@
 # BIP-003 - Proxy upload API + bridge BE + context inject OPC
 
-> Stato attuale: `🔄 In Esecuzione` - avvio 2026-03-11
+> Stato attuale: `🚫 Sospesa` - avvio 2026-03-11
 > Owner: `proxy + be` team
 
 ## Contesto
@@ -125,3 +125,13 @@ Campi response proxy -> Box:
   - `GET /api/v1/uploads/{upload_id}/download` raggiungibile e contenuto corretto.
 - Correzione tecnica applicata durante test:
   - fix forwarding multipart nel proxy con passthrough raw body + content-type originale (boundary invariato), evitando errori di encoding multipart.
+
+### 2026-03-13 - Sospensione fase inject
+
+- Decisione operativa: inject su `opc` non e previsto al momento.
+- Il tracciamento contestuale documento viene spostato su strategia completion-time:
+  - lookup `GET /api/v1/uploads` su metadata correlati
+  - arricchimento/sostituzione messaggio utente con `public_url`
+  - inoltro a completions
+- Riferimento attivo: `BIP-004`.
+- Scope architetturale di riferimento: `BIP-005` (OpenWebUI Edge Gateway).

@@ -123,3 +123,13 @@ Linee guida:
 - Aggiunta compatibilita runtime su `/v1/responses`:
   - se `be` risponde `404 Not Found` (upstream non disponibile), il proxy fa fallback a `be /v1/chat/completions`
   - il proxy traduce la risposta chat in shape `response` minimale per evitare blocchi client.
+
+### 2026-03-13 - Allineamento strategia documenti
+
+- Fase inject documento (`BIP-003`) sospesa per ora.
+- Formalizzato pivot architetturale in BIP-005 (scope Edge Gateway).
+- Strategia corrente documentata in `BIP-004`:
+  - prerequisito: hard intercept di `POST /api/v1/files*` (`BIP-002`)
+  - correlazione file/chat in Function Box al primo `chat/completions`
+  - lookup `GET /api/v1/uploads` via metadati correlati
+  - arricchimento/sostituzione del messaggio con `public_url` prima dell'inoltro completion.
