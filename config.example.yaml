@@ -1,6 +1,6 @@
 gateway:
   base_url: http://127.0.0.1:18789
-  token: "REPLACE_WITH_OPENCLAW_GATEWAY_TOKEN"
+  token: "${OPENCLAW_GATEWAY_TOKEN}" # opzionale se il proxy non chiama il gateway direttamente
 
 backend:
   base_url: http://127.0.0.1:8000

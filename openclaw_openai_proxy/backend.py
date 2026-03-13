@@ -17,6 +17,25 @@ class BackendClient:
     def base_url(self) -> str:
         return str(self._config.backend.base_url).rstrip("/")
 
+    async def post_json(
+        self,
+        path: str,
+        payload: dict,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        target_url = f"{self.base_url}{path}"
+        resolved_headers = dict(headers or {})
+
+        def _post_sync() -> httpx.Response:
+            with httpx.Client(timeout=self._timeout) as client:
+                return client.post(
+                    target_url,
+                    json=payload,
+                    headers=resolved_headers,
+                )
+
+        return await asyncio.to_thread(_post_sync)
+
     async def upload_multipart_raw(
         self,
         body: bytes,

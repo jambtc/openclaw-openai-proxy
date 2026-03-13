@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import json
 import logging
+import time
 import uuid
 from typing import Any, Dict
 
@@ -13,14 +14,12 @@ from fastapi.responses import JSONResponse
 
 from .backend import BackendClient
 from .config import AgentConfig
-from .gateway import GatewayClient
 from .settings import build_runtime_settings
 
 log = logging.getLogger(__name__)
 
 settings = build_runtime_settings()
 config = settings.app_config
-client = GatewayClient(config)
 backend_client = BackendClient(config)
 
 app = FastAPI(title="OpenClaw OpenAI Proxy", version="0.1.0")
@@ -122,7 +121,6 @@ def _session_key(user_id: str, chat_id: str) -> str:
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
-    await client.close()
     await backend_client.close()
 
 
@@ -150,43 +148,330 @@ async def list_models_alias() -> Dict[str, Any]:
     return await list_models()
 
 
-async def _forward_chat_completion(payload: Dict[str, Any]):
+def _resolve_agent(model_id: str) -> AgentConfig:
+    for agent in config.agents:
+        if agent.id == model_id:
+            return agent
+    raise ValueError(f"Unknown model id '{model_id}'")
+
+
+def _normalize_openai_model(
+    payload: Dict[str, Any], require_model: bool = True
+) -> None:
     model_id = payload.get("model")
     if not model_id:
-        raise HTTPException(
-            status_code=400, detail="Missing 'model' in payload")
+        if require_model:
+            raise HTTPException(status_code=400, detail="Missing 'model' in payload")
+        return
+
+    if isinstance(model_id, str) and (
+        model_id.startswith("openclaw:") or model_id.startswith("agent:")
+    ):
+        return
 
     try:
-        agent = client.resolve_agent(model_id)
-    except httpx.HTTPError as exc:
+        agent = _resolve_agent(model_id)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     payload["model"] = f"openclaw:{agent.agent_id}"
 
-    # Force non-streaming
-    payload["stream"] = False
 
-    result = await client.chat_completions(payload, False)
-    assert isinstance(result, httpx.Response)
-    return JSONResponse(content=result.json())
+def _is_upstream_not_found(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        return str(detail.get("raw", "")).strip().lower() == "not found"
+    if isinstance(detail, str):
+        return detail.strip().lower() == "not found"
+    return False
+
+
+def _extract_responses_input_text(input_value: Any) -> str:
+    if isinstance(input_value, str):
+        return input_value
+
+    if isinstance(input_value, list):
+        chunks: list[str] = []
+        for item in input_value:
+            if isinstance(item, str):
+                chunks.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+
+            item_type = item.get("type")
+            if item_type in {"input_text", "text"} and isinstance(item.get("text"), str):
+                chunks.append(item["text"])
+                continue
+
+            content = item.get("content")
+            if isinstance(content, str):
+                chunks.append(content)
+                continue
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, str):
+                        chunks.append(part)
+                    elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                        chunks.append(part["text"])
+        text = "\n".join([c for c in chunks if c]).strip()
+        if text:
+            return text
+
+    if isinstance(input_value, dict):
+        if isinstance(input_value.get("text"), str):
+            return input_value["text"]
+        if isinstance(input_value.get("content"), str):
+            return input_value["content"]
+
+    return str(input_value or "")
+
+
+def _build_chat_fallback_payload_from_responses(
+    payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    text = _extract_responses_input_text(payload.get("input"))
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported /v1/responses input for fallback translation",
+        )
+
+    chat_payload: Dict[str, Any] = {
+        "model": payload.get("model") or "openclaw",
+        "messages": [{"role": "user", "content": text}],
+        "stream": False,
+    }
+
+    # Preserve common generation controls when present.
+    for source_key, target_key in (
+        ("user", "user"),
+        ("temperature", "temperature"),
+        ("top_p", "top_p"),
+        ("stop", "stop"),
+        ("n", "n"),
+    ):
+        value = payload.get(source_key)
+        if value is not None:
+            chat_payload[target_key] = value
+
+    mot = payload.get("max_output_tokens")
+    if mot is not None:
+        chat_payload["max_tokens"] = mot
+
+    return chat_payload
+
+
+def _chat_completion_to_responses_shape(
+    chat_payload: Dict[str, Any], chat_result: Dict[str, Any]
+) -> Dict[str, Any]:
+    choices = chat_result.get("choices") or []
+    first_choice = choices[0] if choices else {}
+    message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+    content = message.get("content") if isinstance(message, dict) else ""
+
+    if isinstance(content, list):
+        output_text = " ".join(str(x) for x in content)
+    elif isinstance(content, str):
+        output_text = content
+    else:
+        output_text = str(content or "")
+
+    usage = chat_result.get("usage") or {}
+    return {
+        "id": f"resp_{uuid.uuid4().hex}",
+        "object": "response",
+        "created_at": chat_result.get("created") or int(time.time()),
+        "status": "completed",
+        "model": chat_result.get("model") or chat_payload.get("model"),
+        "output": [
+            {
+                "id": f"msg_{uuid.uuid4().hex}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": output_text,
+                        "annotations": [],
+                    }
+                ],
+            }
+        ],
+        "output_text": output_text,
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        },
+    }
+
+
+async def _forward_openai_json_to_be(
+    path: str,
+    payload: Dict[str, Any],
+    headers: dict[str, str],
+    *,
+    require_model: bool,
+    force_non_stream: bool,
+    error_message: str,
+) -> JSONResponse:
+    _normalize_openai_model(payload, require_model=require_model)
+    if force_non_stream:
+        payload["stream"] = False
+
+    try:
+        be_response = await backend_client.post_json(
+            path=path,
+            payload=payload,
+            headers=headers,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"message": error_message, "error": str(exc)},
+        ) from exc
+
+    try:
+        be_payload = be_response.json()
+    except Exception:
+        be_payload = {"raw_response": be_response.text}
+
+    return JSONResponse(status_code=be_response.status_code, content=be_payload)
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     payload = await request.json()
     body = _get_body(payload)
+    headers = _bridge_headers_from_request(request)
 
     # Debug: remove if noisy
     print(
-        f"proxy→gateway model={body.get('model')} user={(body.get('user') or '')[:12]}", flush=True)
+        f"proxy→be chat.completions model={body.get('model')} user={(body.get('user') or '')[:12]}",
+        flush=True,
+    )
 
-    return await _forward_chat_completion(body)
+    return await _forward_openai_json_to_be(
+        path="/v1/chat/completions",
+        payload=body,
+        headers=headers,
+        require_model=True,
+        force_non_stream=True,
+        error_message="Failed forwarding chat completion to BE",
+    )
 
 
 @app.post("/chat/completions")
 async def chat_completions_alias(request: Request):
     """Compatibility alias without /v1 prefix."""
     return await chat_completions(request)
+
+
+@app.post("/v1/completions")
+async def completions(request: Request):
+    payload = await request.json()
+    body = _get_body(payload)
+    headers = _bridge_headers_from_request(request)
+
+    print(
+        f"proxy→be completions model={body.get('model')} user={(body.get('user') or '')[:12]}",
+        flush=True,
+    )
+
+    return await _forward_openai_json_to_be(
+        path="/v1/completions",
+        payload=body,
+        headers=headers,
+        require_model=True,
+        force_non_stream=True,
+        error_message="Failed forwarding completion to BE",
+    )
+
+
+@app.post("/completions")
+async def completions_alias(request: Request):
+    """Compatibility alias without /v1 prefix."""
+    return await completions(request)
+
+
+@app.post("/v1/responses")
+async def responses(request: Request):
+    payload = await request.json()
+    body = _get_body(payload)
+    headers = _bridge_headers_from_request(request)
+
+    print(
+        f"proxy→be responses model={body.get('model')} user={(body.get('user') or '')[:12]}",
+        flush=True,
+    )
+    _normalize_openai_model(body, require_model=False)
+    body["stream"] = False
+
+    try:
+        be_response = await backend_client.post_json(
+            path="/v1/responses",
+            payload=body,
+            headers=headers,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Failed forwarding response request to BE", "error": str(exc)},
+        ) from exc
+
+    try:
+        be_payload = be_response.json()
+    except Exception:
+        be_payload = {"raw_response": be_response.text}
+
+    # Some upstream deployments return 404 Not Found for /v1/responses.
+    # In that case, fallback to chat.completions and translate the output shape.
+    if be_response.status_code == 404 and _is_upstream_not_found(be_payload):
+        fallback_payload = _build_chat_fallback_payload_from_responses(body)
+        _normalize_openai_model(fallback_payload, require_model=True)
+        fallback_payload["stream"] = False
+
+        try:
+            chat_response = await backend_client.post_json(
+                path="/v1/chat/completions",
+                payload=fallback_payload,
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Failed forwarding /v1/responses fallback to chat.completions",
+                    "error": str(exc),
+                },
+            ) from exc
+
+        try:
+            chat_payload = chat_response.json()
+        except Exception:
+            chat_payload = {"raw_response": chat_response.text}
+
+        if chat_response.status_code >= 400 or not isinstance(chat_payload, dict):
+            return JSONResponse(status_code=chat_response.status_code, content=chat_payload)
+
+        translated = _chat_completion_to_responses_shape(fallback_payload, chat_payload)
+        translated["fallback"] = {
+            "active": True,
+            "reason": "upstream_/v1/responses_not_available",
+        }
+        return JSONResponse(status_code=200, content=translated)
+
+    return JSONResponse(status_code=be_response.status_code, content=be_payload)
+
+
+@app.post("/responses")
+async def responses_alias(request: Request):
+    """Compatibility alias without /v1 prefix."""
+    return await responses(request)
 
 
 def _bridge_headers_from_request(request: Request) -> dict[str, str]:

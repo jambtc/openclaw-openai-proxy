@@ -1,113 +1,63 @@
-# OpenClaw OpenAI Proxy
+# OpenClaw OpenAI Proxy (towards OpenWebUI Edge Gateway)
 
-OpenAI-compatible HTTP proxy that lets Open WebUI talk to OpenClaw agents while
-preserving chat/session affinity. It exposes:
+Questo repository nasce come OpenAI-compatible proxy (`boxedai -> proxy -> be -> openclaw`),
+ma il requisito prodotto emerso sul flusso documenti ha cambiato il perimetro:
 
-- `/v1/models` – advertises your OpenClaw agents as OpenAI models and publishes a
-  pipeline filter that injects the Open WebUI `chat_id` into the OpenAI `user`
-  field.
-- `/v1/chat/completions` – forwards requests to the OpenClaw Gateway
-  (`gateway.http.endpoints.chatCompletions`).
-- `/<pipeline-id>/filter/(inlet|outlet)` – remote pipeline hooks consumed by Open
-  WebUI filters.
+- il caricamento `POST /api/v1/files` deve essere intercettato
+- il file non deve restare nel dominio Box
+- il percorso target deve essere `box -> proxy -> be` (RAG documentale)
 
-## Features
+Per questo il progetto evolve verso un vero **Edge Gateway** davanti a OpenWebUI.
 
-- Stable session routing: the bundled pipeline copies `__metadata__.chat_id`
-  into `user`, so the Gateway derives a deterministic session key per chat.
-- Explicit agent routing: every exposed model maps to an OpenClaw agent id
-  (`model=openclaw:<agentId>`).
-- YAML configuration + environment variable override for the gateway token.
-- Works with Open WebUI's *Connections → OpenAI Compatible* feature and the
-  Pipelines UI (filter type).
+Nome target repository (proposto): **`openwebui-edge-gateway`**.
 
-## Project layout
+## Perche il pivot
 
-```
-openclaw-openai-proxy/
-├── openclaw_openai_proxy/
-│   ├── config.py          # Pydantic models for gateway/agent/pipeline config
-│   ├── gateway.py         # Async HTTP client for the OpenClaw Gateway
-│   ├── main.py            # Entry point used by `openclaw-openai-proxy` CLI
-│   ├── server.py          # FastAPI app + pipeline handlers
-│   └── settings.py        # Loads YAML config via OPENCLAW_PROXY_CONFIG
-├── config.example.yaml    # Sample configuration
-├── pyproject.toml         # Project metadata + dependencies
-└── README.md              # This file
-```
+Con le sole Function OpenWebUI (anche avanzate) non si intercetta direttamente
+`/api/v1/files`: le Function operano nel percorso chat/completions, non sui router
+HTTP files del backend Box.
 
-## Configuration
+Quindi per il requisito upload serve un layer L7 che intercetti route API,
+con due opzioni:
 
-Create a `config.yaml` (or point `OPENCLAW_PROXY_CONFIG` to another path):
+1. fork Box (FE/BE) con reroute upload
+2. reverse proxy/API gateway davanti a Box che intercetta `/api/v1/files*`
 
-```yaml
-gateway:
-  base_url: http://127.0.0.1:18789
-  token: "REPLACE_WITH_OPENCLAW_GATEWAY_TOKEN"
+## Stato attuale implementato
 
-agents:
-  - id: "openclaw:contabo"
-    name: "Contabo (OpenClaw)"
-    description: "Instruito con tono tecnico."
-    agent_id: "main"
-    tags: ["internal", "openclaw"]
+- Routing OpenAI-compatible verso BE:
+  - `/v1/chat/completions`
+  - `/v1/completions`
+  - `/v1/responses` (con fallback su chat/completions se upstream non disponibile)
+- Bridge upload BE:
+  - `/v1/uploads/bridge` (alias `/uploads/bridge`) -> `be /api/v1/uploads`
+- Session bridge function lato Box (`body.user = sha256(user_id:chat_id)`).
 
-pipeline:
-  id: "openclaw-session-filter"
-  name: "OpenClaw session bridge"
-  description: "Propaga chat_id nel campo user per sessioni stabili."
-  pipelines: ["*"]
-  priority: 500
-```
+## Nuovo scope (Edge Gateway)
 
-Environment variables:
+Scope prioritario:
 
-- `OPENCLAW_PROXY_CONFIG`: path to the YAML file (default: `config.yaml`).
+1. Intercettare `POST /api/v1/files` (e route collegate) a livello gateway.
+2. Inoltrare upload a `proxy -> be` e restituire shape compatibile al FE Box.
+3. Prima della completion, risolvere `public_url` via `GET /api/v1/uploads` e arricchire il messaggio.
 
-## Running locally
+Dettaglio operativo e decisioni nei BIP sotto `docs/bips`.
+
+## BIP di riferimento
+
+- `BIP-001`: visione full-routing
+- `BIP-002`: intercetto upload Box `/api/v1/files*`
+- `BIP-003`: upload bridge + inject (attualmente sospesa parte inject)
+- `BIP-004`: correlazione file/chat + lookup upload pre-completion
+- `BIP-005`: scope ufficiale Edge Gateway
+
+## Avvio locale
 
 ```bash
-cd openclaw-openai-proxy
+cd /var/www/openclaw-openai-proxy
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 OPENCLAW_PROXY_CONFIG=config.yaml openclaw-openai-proxy
 ```
 
-The service listens on `0.0.0.0:4010` by default.
-
-## Wiring it into Open WebUI
-
-1. **Connection** – add a new OpenAI-compatible connection that points to the
-   proxy (e.g. `http://HOST:4010`) and use any placeholder API key (the proxy
-   currently trusts the caller; network-level ACLs are recommended).
-2. **Models** – the `/v1/models` response will expose each configured agent as a
-   selectable model.
-3. **Pipeline filter** – in *Pipelines* choose the proxy connection, import the
-   `openclaw-session-filter`, and attach it to the models that should inherit
-   the stable session behaviour.
-
-## Deploying (systemd snippet)
-
-```ini
-[Unit]
-Description=OpenClaw OpenAI Proxy
-After=network.target
-
-[Service]
-Environment=OPENCLAW_PROXY_CONFIG=/etc/openclaw-openai-proxy.yaml
-WorkingDirectory=/opt/openclaw-openai-proxy
-ExecStart=/opt/openclaw-openai-proxy/.venv/bin/openclaw-openai-proxy
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## Limitations
-
-- `/pipelines/upload` and `/pipelines/add` return HTTP 405 (not yet supported).
-- Only chat completions are proxied; embeddings/images are out of scope.
-- The proxy trusts inbound requests; place it behind a reverse proxy or private
-  network segment if you need authentication.
-
-Contributions via pull requests/issues are welcome.
+Servizio di default: `0.0.0.0:4010`.

@@ -57,7 +57,10 @@ class GatewayConfig(BaseModel):
     base_url: AnyHttpUrl = Field(
         default="http://127.0.0.1:18789", description="OpenClaw Gateway URL"
     )
-    token: str = Field(..., description="Gateway bearer token")
+    token: str = Field(
+        default="",
+        description="Gateway bearer token (optional unless direct gateway calls are enabled)",
+    )
 
 
 class BackendConfig(BaseModel):
@@ -70,7 +73,7 @@ class BackendConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    gateway: GatewayConfig
+    gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     backend: BackendConfig = Field(default_factory=BackendConfig)
     agents: List[AgentConfig]
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

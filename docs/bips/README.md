@@ -11,13 +11,15 @@ Le BIP servono a tracciare in modo operativo:
 
 ## Indice
 
-Legenda stato: `📋 Proposta` - `🔄 In Esecuzione` - `✅ Completata` - `🚫 Bloccata`
+Legenda stato: `📋 Proposta` - `🔄 In Esecuzione` - `✅ Completata` - `🚫 Bloccata/Sospesa`
 
 | BIP | Titolo | Categoria | Priorita | Stato |
 | --- | ------ | --------- | -------- | ----- |
 | [BIP-001](BIP-001-proxy-full-routing-be.md) | Proxy full-routing verso BE (completions + documenti) | Architettura / Integrazione | Alta | 🔄 In Esecuzione |
-| [BIP-002](BIP-002-box-upload-intercept.md) | Box upload intercept (`/api/v1/files`) verso proxy | Integrazione Box / Proxy | Alta | 📋 Proposta |
-| [BIP-003](BIP-003-proxy-upload-bridge-be-opc.md) | Proxy upload API + bridge BE + context inject OPC | Integrazione Proxy / BE / OPC | Alta | 🔄 In Esecuzione |
+| [BIP-002](BIP-002-box-upload-intercept.md) | Box upload intercept (`/api/v1/files`) verso proxy | Integrazione Box / Proxy | Alta | 🔄 In Esecuzione |
+| [BIP-003](BIP-003-proxy-upload-bridge-be-opc.md) | Proxy upload API + bridge BE + context inject OPC | Integrazione Proxy / BE / OPC | Alta | 🚫 Sospesa |
+| [BIP-004](BIP-004-box-file-metadata-correlation-without-box-code.md) | Correlazione file/chat con lookup upload prima di completions | Integrazione Box Function / Metadata | Alta | 🔄 In Esecuzione |
+| [BIP-005](BIP-005-openwebui-edge-gateway-scope.md) | Pivot architetturale a OpenWebUI Edge Gateway | Architettura / Scope | Alta | 🔄 In Esecuzione |
 
 ---
 
