@@ -1966,29 +1966,10 @@ async def edge_passthrough(request: Request, full_path: str = ""):
     if not config.edge.enabled:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    target_url = _edge_target_url(request, full_path)
-    forwarded_headers = _edge_passthrough_headers(request)
     body = await request.body()
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=config.edge.timeout_seconds, follow_redirects=False
-        ) as client:
-            upstream = await client.request(
-                method=request.method,
-                url=target_url,
-                headers=forwarded_headers,
-                content=body,
-            )
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={"message": "Edge passthrough upstream error", "error": str(exc)},
-        ) from exc
-
-    response_headers = _edge_response_headers(upstream.headers)
-    return Response(
-        content=upstream.content,
-        status_code=upstream.status_code,
-        headers=response_headers,
+    upstream = await _edge_passthrough_http_request(
+        request,
+        full_path=full_path,
+        body=body,
     )
+    return _edge_response_from_upstream(upstream)
