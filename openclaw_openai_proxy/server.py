@@ -922,12 +922,36 @@ async def _edge_passthrough_http_request(
 
 
 def _edge_response_from_upstream(upstream: httpx.Response) -> Response:
-    response_headers = _edge_response_headers(upstream.headers)
-    return Response(
+    response = Response(
         content=upstream.content,
         status_code=upstream.status_code,
-        headers=response_headers,
     )
+
+    for name, value in upstream.headers.items():
+        lower = name.lower()
+        if lower in HOP_BY_HOP_HEADERS:
+            continue
+        if lower in {"content-length", "set-cookie"}:
+            continue
+        response.headers[name] = value
+
+    set_cookie_values: list[str] = []
+    try:
+        set_cookie_values = upstream.headers.get_list("set-cookie")
+    except Exception:
+        try:
+            set_cookie_values = [
+                value
+                for key, value in upstream.headers.multi_items()
+                if key.lower() == "set-cookie"
+            ]
+        except Exception:
+            set_cookie_values = []
+
+    for cookie_value in set_cookie_values:
+        response.raw_headers.append((b"set-cookie", cookie_value.encode("latin-1")))
+
+    return response
 
 
 def _edge_parse_json_bytes(body: bytes) -> dict[str, Any]:
@@ -1227,9 +1251,30 @@ def _edge_passthrough_headers(request: Request) -> dict[str, str]:
         lower = name.lower()
         if lower in HOP_BY_HOP_HEADERS:
             continue
-        if lower in {"host", "content-length"}:
+        if lower == "content-length":
             continue
         headers[name] = value
+
+    host = request.headers.get("host", "")
+    if host:
+        headers["host"] = host
+        headers.setdefault("x-forwarded-host", host)
+
+    headers.setdefault(
+        "x-forwarded-proto",
+        request.headers.get("x-forwarded-proto") or request.url.scheme or "https",
+    )
+
+    forwarded_port = request.headers.get("x-forwarded-port")
+    if not forwarded_port:
+        if request.url.port:
+            forwarded_port = str(request.url.port)
+        elif headers["x-forwarded-proto"] == "https":
+            forwarded_port = "443"
+        else:
+            forwarded_port = "80"
+    headers["x-forwarded-port"] = forwarded_port
+
     return headers
 
 
