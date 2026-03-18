@@ -699,19 +699,19 @@ def _edge_provider_chat_id(request: Request, payload: dict[str, Any]) -> str | N
 
 
 def _edge_build_public_document_url(be_payload: dict[str, Any], links_payload: dict[str, Any]) -> str | None:
-    # Test mode for OPC: force presigned_get_url first.
-    # This is the most realistic candidate when BE/MinIO is configured correctly,
-    # and avoids ambiguity with static public_url/download_url behavior.
+    # Prefer the stable public_url exactly as returned by BE/MinIO.
+    # In the current deployment OPC can read localhost:9000 from its local runtime,
+    # so we must not rewrite it to a public domain or prioritize presigned variants.
     for candidate in (
-        links_payload.get("presigned_get_url"),
-        be_payload.get("presigned_get_url"),
+        links_payload.get("public_url"),
+        be_payload.get("public_url"),
     ):
         if isinstance(candidate, str) and candidate:
             return candidate
 
     for candidate in (
-        links_payload.get("public_url"),
-        be_payload.get("public_url"),
+        links_payload.get("presigned_get_url"),
+        be_payload.get("presigned_get_url"),
     ):
         if isinstance(candidate, str) and candidate:
             return candidate
@@ -834,14 +834,26 @@ def _edge_append_document_context(
     if not messages or not documents:
         return
 
+    def workspace_target(doc: dict[str, str]) -> str:
+        raw_url = str(doc.get("public_url") or "")
+        parsed = urlparse(raw_url)
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 4:
+            return f"boxedai_downloads/{parts[1]}/{parts[2]}/{doc['filename']}"
+        upload_id = str(doc.get("upload_id") or "unknown-upload")
+        return f"boxedai_downloads/unknown-user/{upload_id}/{doc['filename']}"
+
     lines = [
         "Attached documents:",
         "Use these document URLs as the primary source for this request.",
-        "If you need the file content, perform an internal curl/HTTP GET from your runtime to the document URL below and inspect the returned content.",
+        "Do not use web_fetch for these URLs. web_fetch is disabled for security reasons.",
+        "If you need the file content, use curl or wget from your runtime.",
+        "Download each file into your workspace under the exact target path shown below before inspecting it.",
         "Do not ask the user to upload the file again if a document URL is already present.",
     ]
     for doc in documents:
         lines.append(f"- {doc['filename']}: {doc['public_url']}")
+        lines.append(f"  save_to: {workspace_target(doc)}")
     injection = "\n".join(lines)
 
     for message in reversed(messages):
