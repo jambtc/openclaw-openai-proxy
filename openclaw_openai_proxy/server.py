@@ -209,26 +209,41 @@ async def healthz() -> Dict[str, str]:
 # OpenAI-compatible endpoints
 # -------------------------
 @app.get("/v1/models")
-async def list_models() -> Dict[str, Any]:
-    return {
-        "object": "list",
-        "data": [_serialize_agent(agent) for agent in config.agents],
+async def list_models(request: Request) -> Response:
+    headers = _bridge_headers_from_request(request)
+
+    try:
+        be_response = await backend_client.get(path="/v1/models", headers=headers)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Failed forwarding model list request to BE", "error": str(exc)},
+        ) from exc
+
+    try:
+        be_payload = be_response.json()
+    except Exception:
+        be_payload = {"raw_response": be_response.text}
+
+    if isinstance(be_payload, dict) and be_response.status_code < 400:
+        be_payload = dict(be_payload)
         # Non-standard extension used by Open WebUI (handy for discovering pipelines)
-        "pipelines": [_serialize_pipeline()],
-    }
+        be_payload.setdefault("pipelines", [_serialize_pipeline()])
+
+    return JSONResponse(status_code=be_response.status_code, content=be_payload)
 
 
 @app.get("/models")
-async def list_models_alias() -> Dict[str, Any]:
+async def list_models_alias(request: Request) -> Response:
     """Compatibility alias without /v1 prefix."""
-    return await list_models()
+    return await list_models(request)
 
 
-def _resolve_agent(model_id: str) -> AgentConfig:
+def _resolve_agent(model_id: str) -> AgentConfig | None:
     for agent in config.agents:
         if agent.id == model_id:
             return agent
-    raise ValueError(f"Unknown model id '{model_id}'")
+    return None
 
 
 def _normalize_openai_model(
@@ -240,17 +255,21 @@ def _normalize_openai_model(
             raise HTTPException(status_code=400, detail="Missing 'model' in payload")
         return
 
-    if isinstance(model_id, str) and (
-        model_id.startswith("openclaw:") or model_id.startswith("agent:")
-    ):
+    if not isinstance(model_id, str):
+        if require_model:
+            raise HTTPException(status_code=400, detail="Invalid 'model' in payload")
         return
 
-    try:
-        agent = _resolve_agent(model_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if model_id.startswith("openclaw:") or model_id.startswith("agent:"):
+        return
 
-    payload["model"] = f"openclaw:{agent.agent_id}"
+    agent = _resolve_agent(model_id)
+    if agent is not None:
+        payload["model"] = f"openclaw:{agent.agent_id}"
+        return
+
+    # Dynamic model ids coming from BE /v1/models must pass through unchanged.
+    payload["model"] = model_id
 
 
 def _is_upstream_not_found(payload: Any) -> bool:

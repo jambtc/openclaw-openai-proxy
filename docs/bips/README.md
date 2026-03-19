@@ -21,6 +21,7 @@ Legenda stato: `📋 Proposta` - `🔄 In Esecuzione` - `✅ Completata` - `🚫
 | [BIP-004](BIP-004-box-file-metadata-correlation-without-box-code.md) | Correlazione file/chat con lookup upload prima di completions | Integrazione Box Function / Metadata | Alta | 🔄 In Esecuzione |
 | [BIP-005](BIP-005-openwebui-edge-gateway-scope.md) | Pivot architetturale a OpenWebUI Edge Gateway | Architettura / Scope | Alta | 🔄 In Esecuzione |
 | [BIP-006](BIP-006-edge-gateway-phase1-implementation-plan.md) | Piano tecnico Fase 1 Edge Gateway (upload intercept) | Implementazione | Alta | 🔄 In Esecuzione |
+| [BIP-007](BIP-007-dynamic-models-proxy-from-be.md) | Proxy dinamico `/v1/models` dal BE mantenendo il gateway nel mezzo | Architettura / Integrazione | Alta | 🔄 In Esecuzione |
 
 ---
 
