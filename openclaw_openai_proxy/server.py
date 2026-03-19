@@ -866,13 +866,25 @@ def _edge_append_document_context(
         "Attached documents:",
         "Use these document URLs as the primary source for this request.",
         "Do not use web_fetch for these URLs. web_fetch is disabled for security reasons.",
-        "If you need the file content, use curl or wget from your runtime.",
-        "Download each file into your workspace under the exact target path shown below before inspecting it.",
-        "Do not ask the user to upload the file again if a document URL is already present.",
+        "Work only with local files in your workspace after downloading them.",
+        "Before answering about a document, verify that the file exists at the exact save_to path shown below.",
+        "If the file does not exist, create the parent directory and download it yourself.",
+        "Preferred commands:",
+        "1. mkdir -p <parent_dir>",
+        "2. curl -L <url> -o <save_to>",
+        "3. if curl fails, retry once; then try wget -O <save_to> <url>",
+        "If a previously downloaded file is missing, download it again silently instead of asking for re-upload.",
+        "Ask the user to re-upload only if repeated download attempts fail, and report the concrete command error.",
     ]
     for doc in documents:
-        lines.append(f"- {doc['filename']}: {doc['public_url']}")
-        lines.append(f"  save_to: {workspace_target(doc)}")
+        target = workspace_target(doc)
+        parent = target.rsplit("/", 1)[0]
+        url = str(doc["public_url"])
+        lines.append(f"- {doc['filename']}: {url}")
+        lines.append(f"  save_to: {target}")
+        lines.append(f"  mkdir_cmd: mkdir -p {parent}")
+        lines.append(f'  curl_cmd: curl -L "{url}" -o "{target}"')
+        lines.append(f'  wget_cmd: wget -O "{target}" "{url}"')
     injection = "\n".join(lines)
 
     for message in reversed(messages):
