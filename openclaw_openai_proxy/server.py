@@ -37,6 +37,7 @@ EDGE_FILE_STORE: dict[str, dict[str, Any]] = {}
 EDGE_CHAT_STORE: dict[str, dict[str, Any]] = {}
 EDGE_PENDING_PROVIDER_CONTEXTS: list[dict[str, Any]] = []
 EDGE_PENDING_PROVIDER_TTL_SECONDS = 120
+EDGE_DYNAMIC_DEFAULT_MODEL_ID: str | None = None
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -150,6 +151,43 @@ def _serialize_agent(agent: AgentConfig) -> Dict[str, Any]:
     }
 
 
+
+
+def _extract_explicit_model_ids(models_payload: dict[str, Any]) -> list[str]:
+    data = models_payload.get("data")
+    if not isinstance(data, list):
+        return []
+
+    explicit_ids: list[str] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not isinstance(model_id, str):
+            continue
+        if model_id.startswith("openclaw:") or model_id.startswith("agent:"):
+            explicit_ids.append(model_id)
+    return explicit_ids
+
+
+def _filter_models_for_box(models_payload: dict[str, Any]) -> dict[str, Any]:
+    global EDGE_DYNAMIC_DEFAULT_MODEL_ID
+
+    payload = dict(models_payload)
+    data = payload.get("data")
+    if not isinstance(data, list):
+        return payload
+
+    explicit_ids = _extract_explicit_model_ids(payload)
+    if explicit_ids:
+        EDGE_DYNAMIC_DEFAULT_MODEL_ID = explicit_ids[0]
+        payload["data"] = [
+            item
+            for item in data
+            if not (isinstance(item, dict) and item.get("id") == "openclaw")
+        ]
+    return payload
+
 def _serialize_pipeline() -> Dict[str, Any]:
     pipeline = config.pipeline
     return {
@@ -226,7 +264,7 @@ async def list_models(request: Request) -> Response:
         be_payload = {"raw_response": be_response.text}
 
     if isinstance(be_payload, dict) and be_response.status_code < 400:
-        be_payload = dict(be_payload)
+        be_payload = _filter_models_for_box(be_payload)
         # Non-standard extension used by Open WebUI (handy for discovering pipelines)
         be_payload.setdefault("pipelines", [_serialize_pipeline()])
 
@@ -261,6 +299,10 @@ def _normalize_openai_model(
         return
 
     if model_id.startswith("openclaw:") or model_id.startswith("agent:"):
+        return
+
+    if model_id == "openclaw" and EDGE_DYNAMIC_DEFAULT_MODEL_ID:
+        payload["model"] = EDGE_DYNAMIC_DEFAULT_MODEL_ID
         return
 
     agent = _resolve_agent(model_id)
